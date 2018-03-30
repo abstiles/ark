@@ -1,0 +1,73 @@
+#!/usr/bin/env python2
+
+import fileinput
+import re
+
+from colorsys import rgb_to_hls, hls_to_rgb
+from colorsys import rgb_to_yiq, yiq_to_rgb
+
+hex_color = re.compile(r'#([0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?)\b')
+
+def invert_matched_color_hsl(m):
+    r, g, b = str_to_tuple(m.group(1))
+    r, g, b = map(hex_to_float, (r, g, b))
+    h, l, s = rgb_to_hls(r, g, b)
+    r, g, b = hls_to_rgb(h, 1 - l, s)
+    r, g, b = map(float_to_hex, (r, g, b))
+    return '#{}{}{}'.format(r, g, b)
+
+def invert_matched_color_yiq(m):
+    r, g, b = str_to_tuple(m.group(1))
+    r, g, b = map(hex_to_float, (r, g, b))
+    y, i, q = rgb_to_yiq(r, g, b)
+    r, g, b = yiq_to_rgb(1 - y, i, q)
+    r, g, b = map(float_to_hex, (r, g, b))
+    return '#{}{}{}'.format(r, g, b)
+
+def invert_matched_color_gamma_corrected_hsl(m):
+    color_str = m.group(1)
+    if len(color_str) == 3:
+        r, g, b = [ch * 2 for ch in color_str]
+    elif len(color_str) == 6:
+        r, g, b = map(''.join, zip(color_str[::2], color_str[1::2]))
+    r, g, b = map(hex_to_float, (r, g, b))
+    r, g, b = map(inv_gam_sRGB, (r, g, b))
+    h, l, s = rgb_to_hls(r, g, b)
+    r, g, b = hls_to_rgb(h, 1 - l, s)
+    r, g, b = map(gam_sRGB, (r, g, b))
+    r, g, b = map(float_to_hex, (r, g, b))
+    return '#{}{}{}'.format(r, g, b)
+
+def str_to_tuple(color_str):
+    if len(color_str) == 3:
+        r, g, b = [ch * 2 for ch in color_str]
+    elif len(color_str) == 6:
+        r, g, b = map(''.join, zip(color_str[::2], color_str[1::2]))
+    else:
+        raise ValueError('Could not parse color string {}'.format(color_str))
+    return r, g, b
+
+# Inverse of sRGB "gamma" function. (approx 2.2)
+def inv_gam_sRGB(c):
+    if c <= 0.04045:
+        return c/12.92
+    else:
+        return ((c+0.055)/(1.055)) ** 2.4
+
+# sRGB "gamma" function (approx 2.2)
+def gam_sRGB(v):
+    if v<=0.0031308:
+        v *= 12.92
+    else:
+        v = 1.055 * (v ** (1.0 / 2.4)) - 0.055
+    return v;
+
+def hex_to_float(hex_str):
+    return int(hex_str, 16) / 255.0
+
+def float_to_hex(f):
+    return '{:02x}'.format(int(round(f * 255)))
+
+for line in fileinput.input():
+    invert_matched_color = invert_matched_color_yiq
+    print hex_color.sub(invert_matched_color, line),

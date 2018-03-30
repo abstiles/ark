@@ -1,0 +1,37 @@
+#!/bin/bash
+
+currently_merging() {
+	[[ -e .git/MERGE_HEAD ]]
+}
+
+cd "$(git rev-parse --show-toplevel)"
+
+git_args=()
+git_args+=( --oneline )
+git_args+=( --summary )
+# Display renames as such.
+git_args+=( --find-renames )
+# Needed to ensure renames are identified in all cases.
+git_args+=( --full-diff )
+if currently_merging; then
+	git_args+=( --left-right HEAD...MERGE_HEAD )
+fi
+
+if [[ -e "$1" ]]; then
+	target_path="$1"
+else
+	target_path='**/'"$(basename "$1")"
+fi
+
+readonly NC=$(tput sgr0 || true)
+readonly BOLD=$(tput bold || true)
+readonly RED=$(tput setaf 1 || true)
+readonly GREEN=$(tput setaf 2 || true)
+readonly YELLOW=$(tput setaf 3 || true)
+
+echo "Who touched '${BOLD}${target_path}${NC}'?"
+git log "${git_args[@]}" -- "$target_path" \
+	| grep -e '^[a-f0-9<>]' -e "$(basename "$1")" \
+	| sed 's/^[<>] [a-f0-9]\{1,\}/'"${YELLOW}&${NC}/" \
+	| sed "s/^ rename/${RED}&${NC}/" \
+	| sed 's/{\([^}]*\)\( => \)\([^}]*\)}/'"{${RED}\\1${NC}${BOLD}\\2${NC}${GREEN}\\3${NC}}/"

@@ -1,0 +1,77 @@
+#!/bin/bash
+
+readonly TASKS=(
+	compileJava
+	compileTestJava
+	compileTestIntegrationJava
+	checkstyleMain
+	checkstyleTest
+	checkstyleTestIntegration
+	)
+
+# Set an error handler to log the location of an error before exiting
+function _exit_err {
+	local retval=$1
+	echo "ERROR: $BASH_SOURCE: line $BASH_LINENO: $BASH_COMMAND" >&2
+	exit "$retval"
+}; trap '_exit_err $?' ERR
+
+# These variables are used by git-sh-setup, but shellcheck reports them unused.
+# shellcheck disable=SC2034
+USAGE="Performs a gradle build to pre-check a commit."
+# shellcheck disable=SC2034
+SUBDIRECTORY_OK=1
+
+. "$(git --exec-path)/git-sh-setup"
+
+# The following options enable a kind of strict mode: exit script when a
+# command fails, and fail when accessing undefined variables.
+set -Eu
+set -o pipefail
+shopt -s nullglob
+
+files_updated() {
+	local varname=$1
+	unset "$varname"
+	while IFS= read -d '' line; do
+		eval "$varname+=( \"\$line\" )"
+	done < <(git diff --cached --name-only --diff-filter=ACM -z)
+}
+
+containing_gradle_project() {
+	local filename=$1
+	local dir=$(dirname "$(git_root)/$filename")
+	local gradle_files=()
+	local full_path
+	while [[ $dir != $(dirname "$(git_root)") ]]; do
+		gradle_files=( "$dir"/*.gradle )
+		if (( ${#gradle_files[@]} > 0 )); then
+			printf '%s' "$dir"
+			return
+		fi
+		dir=$(dirname "$dir")
+	done
+}
+
+git_root() {
+	git rev-parse --show-toplevel
+}
+
+main() {
+	files_updated updated
+	local changed_subprojects=()
+	while IFS= read -d '' prefix; do
+		changed_subprojects+=( "$prefix" )
+	done < <(
+		for file in "${updated[@]}"; do
+			local project_dir=$(containing_gradle_project "$file")
+			if [[ -n $project_dir ]]; then
+				printf '%s\0' "$(basename "$project_dir")"
+			fi
+		done | sort -zu)
+	for project in "${changed_subprojects[@]}"; do
+		printf '%s\n' "${TASKS[@]/#/:${project}:}}"
+	done
+}
+
+main "$@"

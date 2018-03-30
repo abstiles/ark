@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+
+import sys
+import argparse
+import logging
+import traceback
+
+
+class Argument(object):
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    def register(self, parser, name):
+        self.kwargs.update({'dest': name})
+        parser.add_argument(*self.args, **self.kwargs)
+
+
+class Options(object):
+    @classmethod
+    def parser(cls):
+        parser = argparse.ArgumentParser()
+        for name, arg in cls.__dict__.items():
+            if isinstance(arg, Argument):
+                arg.register(cls._parser, name)
+        return parser
+
+
+class Logging(Options):
+    _verbose = Argument('--verbose', '-v', action='count', default=0)
+    _quiet = Argument('--quiet', '-q', action='count', default=0)
+
+    @property
+    def verbosity(self):
+        return self._verbose - self._quiet
+
+
+class ScriptError(StandardError):
+    """Base exception for all exceptions raised by this script."""
+
+    message_template = '{}'
+    code = 64
+    def __init__(self, *args, **kwargs):
+        message = self.message_template.format(*args, **kwargs)
+        super(ScriptError, self).__init__(message)
+
+
+def _main(prog, *args):
+    options = Options.from_args(args, prog=prog)
+
+    verbosity = options.pop('verbose') - options.pop('quiet')
+    logging.basicConfig(format='%(message)s',
+                        level=(logging.WARNING - verbosity * 10))
+
+    try:
+        return _execute(**options)
+    except ScriptError as err:
+        logging.error(str(err))
+        return err.code
+    except KeyboardInterrupt:
+        return 130  # Bash convention for exiting due to SIGINT
+    except Exception as err:
+        logging.debug(traceback.format_exc())
+        logging.error('Unexpected error ({type}): {message}'.format(
+            type=err.__class__.__name__, message=str(err)))
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(_main(*sys.argv))

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+readonly LOG_FILE="${HOME}/.personal_log"
+
+printf 'distracted %s\n' "$(date +%s)" >> "$LOG_FILE"

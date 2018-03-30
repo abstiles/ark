@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+
+import os
+
+from datetime import datetime, date, timedelta
+from itertools import groupby
+
+LOG_FILE = os.path.expanduser('~/.personal_log')
+
+
+class LogItem(object):
+    class Status(object):
+        off, on = range(2)
+
+    def __init__(self, status_str, timestamp):
+        if status_str == 'working':
+            self.status = LogItem.Status.on
+        elif status_str == 'distracted':
+            self.status = LogItem.Status.off
+        else:
+            raise RuntimeError('Unknown status')
+        self.timestamp = datetime.fromtimestamp(timestamp)
+
+    @classmethod
+    def from_log_line(cls, log_line):
+        try:
+            status, timestamp = log_line.split()
+        except ValueError:
+            return None
+        return cls(status, float(timestamp))
+
+
+class TimeStats(object):
+    def __init__(self, item_list):
+        self._log = item_list
+
+    @property
+    def working_periods(self):
+        start = None
+        end = None
+        periods = []
+        for item in self._log:
+            if (not start) and item.status == LogItem.Status.on:
+                start = item.timestamp
+            elif start and (item.status == LogItem.Status.off):
+                end = item.timestamp
+            if start is not None and end is not None:
+                periods.append((start, end - start))
+                start = end = None
+        if start is not None:
+            periods.append((start, datetime.now() - start))
+        return periods
+
+    @property
+    def working_time(self):
+        return sum((duration for _, duration in self.working_periods),
+                   timedelta(0))
+
+    @property
+    def longest_uninterrupted(self):
+        return max(duration for _, duration in self.working_periods)
+
+    @property
+    def distracted_time(self):
+        start = None
+        end = None
+        total_time = timedelta(0)
+        for item in self._log:
+            if (not start) and item.status == LogItem.Status.off:
+                start = item.timestamp
+            elif start and (item.status == LogItem.Status.on):
+                end = item.timestamp
+            if start is not None and end is not None:
+                total_time += end - start
+                start = end = None
+        if start is not None:
+            total_time += datetime.now() - start
+        return total_time
+
+
+def items_for_day(history, on_day=None):
+    if on_day is None:
+        on_day = date.today()
+
+    for (day, log) in groupby(history, lambda item: item.timestamp.date()):
+        if day == on_day:
+            return list(log)
+
+
+with open(LOG_FILE, 'r') as log:
+    history = map(LogItem.from_log_line, log)
+
+stats = TimeStats(items_for_day(history))
+
+print 'Total working time today:', str(stats.working_time)
+print 'Total distracted time today:', str(stats.distracted_time)
+print 'Longest effective stretch:', str(stats.longest_uninterrupted)
+print 'Top productive stretches:\n', '\n'.join(
+    str(duration) + ' at ' + date.time().strftime('%l:%M %p')
+    for date, duration in
+    sorted(stats.working_periods, key=lambda p: p[1], reverse=True)[:5])

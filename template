@@ -1,0 +1,141 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import argparse
+import logging
+import traceback
+
+from itertools import imap
+from functools import partial
+
+
+@apply
+def TEMPLATE_LOCATION():
+    this_dir = os.path.dirname(os.path.realpath(__file__))
+    return os.path.join(this_dir, 'templates')
+
+
+class Template(object):
+    def __init__(self, path, type_name, extension=''):
+        self.path = path
+        self.type_name = type_name
+        self.extension = extension.lstrip('.')
+
+    @classmethod
+    def from_path(cls, path):
+        return cls(path, *os.path.splitext(path))
+
+    @property
+    def contents(self):
+        with open(self.path, 'r') as f:
+            for line in f:
+                yield line
+
+    def __str__(self):
+        return '{0.type_name}: *.{0.extension}'.format(self)
+
+
+class TemplateScriptError(StandardError):
+    """Base exception for all exceptions raised by this script."""
+
+    message_template = '{}'
+    code = 64
+    def __init__(self, *args, **kwargs):
+        message = self.message_template.format(*args, **kwargs)
+        return super(TemplateScriptError, self).__init__(message)
+
+
+class BadTemplateError(TemplateScriptError):
+    message_template = 'No template of type "{}"'
+    code = 65
+
+
+def _main(prog, *args):
+    parser = argparse.ArgumentParser(
+        description='A simple template for a Python script')
+    parser.add_argument('--verbose', '-v', action='count', default=0)
+    parser.add_argument('--quiet', '-q', action='count', default=0)
+    parser.add_argument('template_name', metavar='type', nargs='?')
+    parser.add_argument('--out', '-o', metavar='NEW_SCRIPT', dest='outfile',
+                        type=argparse.FileType('w'), default=sys.stdout)
+
+    options = vars(parser.parse_args(args))
+
+    verbosity = options.pop('verbose') - options.pop('quiet')
+    logging.basicConfig(format='%(message)s',
+                        level=(logging.WARNING - verbosity * 10))
+
+    try:
+        return _execute(**options)
+    except TemplateScriptError as err:
+        logging.error(str(err))
+        return err.code
+    except KeyboardInterrupt:
+        return 130  # Bash convention for exiting due to SIGINT
+    except Exception as err:
+        logging.debug(traceback.format_exc())
+        logging.critical('Unexpected error ({type}): {message}'.format(
+            type=err.__class__.__name__, message=str(err)))
+        return 1
+
+
+def _execute(template_name, outfile):
+    if template_name is None:
+        _, extension = os.path.splitext(outfile.name)
+        template = find_by_extension(extension)
+        if template is None:
+            raise BadTemplateError(extension)
+    else:
+        template = find_by_type(template_name)
+        if template is None:
+            raise BadTemplateError(template_name)
+
+    logging.info('Using template at {.path}'.format(template))
+    for line in template.contents:
+        outfile.write(line)
+
+
+def find_by_extension(extension):
+    logging.info('Searching for a template with extension {}'
+                 .format(extension))
+    extension = extension.lstrip('.')
+    for template in templates():
+        logging.debug('Checking template {}'.format(template))
+        if template.extension == extension:
+            return template
+    return None
+
+
+def find_by_type(template_name):
+    logging.info('Searching for a template of type {}'
+                 .format(template_name))
+    for template in templates():
+        logging.debug('Checking template {}'.format(template))
+        if template.type_name == template_name:
+            return template
+    return None
+
+
+def templates():
+    return imap(_create_template_from_file, template_files())
+
+
+def template_files():
+    def not_hidden(filename):
+        return not filename.startswith('.')
+
+    filenames = os.listdir(TEMPLATE_LOCATION)
+    visible_files = filter(not_hidden, filenames)
+    return visible_files
+
+
+def _create_template_from_file(filename):
+    full_path = partial(os.path.join, TEMPLATE_LOCATION)
+    path, (name, extension) = full_path(filename), os.path.splitext(filename)
+    return Template(path, name, extension)
+
+
+if __name__ == '__main__':
+    program_status = _main(*sys.argv)
+    sys.exit(program_status)

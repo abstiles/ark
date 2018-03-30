@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+
+from __future__ import division
+from functools import partial
+
+import sys
+import locale
+
+
+def _main(*args):
+    options = [arg for arg in args if arg.startswith('--')]
+    bytes = [arg for arg in args if not arg.startswith('--')]
+
+    if '--bytes' in options:
+        operation = format_bytes
+    elif '--full' in options:
+        operation = partial(label_bytes, use_short_prefixes=False)
+    elif '--short' in options:
+        operation = partial(label_bytes, use_short_prefixes=True)
+    else:
+        operation = partial(label_bytes)
+
+    for val in bytes:
+        print operation(int(val))
+
+
+def format_bytes(num_bytes):
+    """Format a quantity of bytes according to the locale."""
+    locale.setlocale(locale.LC_ALL, '')
+    output = locale.format("%d", num_bytes, grouping=True) + ' bytes'
+    return output
+
+
+def label_bytes(num_bytes, use_short_prefixes=True):
+    """Return bytes with binary prefixes."""
+    short_prefixes = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
+    full_prefixes = ('Bytes', 'Kilobytes', 'Megabytes', 'Gigabytes',
+                     'Terabytes', 'Petabytes', 'Exabytes', 'Zettabytes', 'Yottabytes')
+    KiB = 1024
+    MiB = KiB * KiB
+    GiB = KiB * MiB
+    TiB = KiB * GiB
+    PiB = KiB * TiB
+    EiB = KiB * PiB
+    ZiB = KiB * EiB
+    YiB = KiB * ZiB
+    prefix_thresholds = (1, KiB, MiB, GiB, TiB, PiB, EiB, ZiB, YiB)
+
+    prefix_map = dict(zip(prefix_thresholds,
+        short_prefixes if use_short_prefixes else full_prefixes)
+    )
+
+    output = '0 Bytes'
+    for prefix_threshold in reversed(prefix_thresholds):
+        if num_bytes > prefix_threshold:
+            output = '%.3g %s' % ((num_bytes / prefix_threshold),
+                                  prefix_map[prefix_threshold])
+            break
+    return output
+
+
+if __name__ == '__main__':
+    _main(*sys.argv[1:])

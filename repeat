@@ -1,0 +1,160 @@
+#!/bin/bash
+
+# The following options enable a kind of strict mode: exit script when a
+# command fails, and fail when accessing undefined variables.
+set -Eu
+set -o pipefail
+
+# Set an error handler to log the location of an error before exiting
+function _exit_err {
+	local retval=$1
+	echo "ERROR: $BASH_SOURCE: line $BASH_LINENO: $BASH_COMMAND" >&2
+	exit "$retval"
+}; trap '_exit_err $?' ERR
+
+readonly COUNT_DEFAULT=-1
+readonly UNTIL_DEFAULT=never
+readonly SECONDS_DEFAULT=0
+readonly FAIL_DEFAULT=false
+
+readonly USAGE="USAGE:
+$0 [(-c|--count) COUNT] [(-u|--until) TIME] COMMAND(S)
+$0 [(-c|--count) COUNT] (-s|--seconds) SECS COMMAND(S)
+$0 --help
+
+OPTIONS
+    (-c|--count) COUNT
+        Repeat for a maximum of COUNT iterations regardless of other specified
+        options. Default: unlimited.
+
+    (-s|--seconds) SECS
+        Run for at least SECS seconds. Your command will not be prematurely
+        terminated. If unspecified, there is no time limit.
+
+    (-u|--until) TIME
+        Continue running until the specified TIME. TIME can be any time string
+        recognized by the 'at' command. Your command will not be prematurely
+        terminated. This will override the --seconds option.
+
+    (-f|--fail)
+        Stop the first time the command exits with a nonzero status.
+"
+
+function usage { printf "%s\n" "$USAGE"; }
+
+# Print the current verbosity level (default 0)
+function verbosity { printf "%d" "${verbosity:-0}"; }
+
+# Logs an error, then terminates with nonzero exit code
+function die { error "$@"; exit 1; }
+
+# Unconditionally logs message to stderr
+function error { log -l "$(verbosity)" "$@" >&2; }
+
+# Log messages to stdout based on verbosity setting. Hidden by default.
+function log {
+	local level=1;
+	if [[ $1 == -l ]]; then level=$(printf %d "$2"); shift 2; fi
+	if (( $# == 1 )); then set -- "%b" "$1"; fi
+	# shellcheck disable=SC2059
+	if (( level <= $(verbosity) )); then printf "$1\n" "${@:2}"; fi
+}
+
+# Process options, filter out positional arguments
+declare -a positional_args
+arg_flags=cus
+while (( $# )); do
+	case $1 in
+		--help|-h|-\?) usage; exit ;;
+		--verbose|-v)  verbosity=$(( $(verbosity) + 1 )) ;;
+		--verbosity)   verbosity=$(printf %d "$2"); shift ;;
+		--fail|-f)     fail_opt=true; ;;
+		--count|-c)    count_opt="$2"; shift ;;
+		--until|-u)    until_opt="$2"; shift ;;
+		--seconds|-s)  seconds_opt="$2"; shift ;;
+		--) shift; break ;;
+		# Handle GNU-style long options with arguments, e.g., "--example=value"
+		--?*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}"; continue ;;
+		# Handle POSIX-style short option chaining, e.g., "-xvf"
+		-[^-]?*) if [[ ${1:1:1} =~ ["${arg_flags-}"] ]]
+		         then set -- "${1:0:2}" "${1:2}" "${@:2}"
+		         else set -- "${1:0:2}" "-${1:2}" "${@:2}"
+		         fi; continue ;;
+		-?*) die "ERROR: Unrecognized option $1\n$(usage)" ;;
+		*) positional_args+=("$1") ;;
+	esac
+	shift
+done
+# Handle the positional arguments
+if (( ${#positional_args[@]} > 0 )); then
+	set -- "${positional_args[@]}" "$@"
+fi
+# Don't pollute the global namespace; remove globals used in arg processing
+unset arg_flags
+unset positional_args
+
+if (( $# < 1 )); then
+	die "No command specified."
+fi
+
+function main {
+	# Use the value set by the options, falling back to the global variable
+	local count=${count_opt-$COUNT_DEFAULT}
+	local until=${until_opt-$UNTIL_DEFAULT}
+	local seconds=${seconds_opt-$SECONDS_DEFAULT}
+	local fail=${fail_opt-$FAIL_DEFAULT}
+	local lockfile=
+	if [[ "$count" != "$COUNT_DEFAULT" ]]; then
+		log -l 2 'Count: %d' "$count"
+	fi
+	if [[ "$until" != "$UNTIL_DEFAULT" ]]; then
+		log -l 2 'Until time: %s' "$until"
+	fi
+	if [[ "$seconds" != "$SECONDS_DEFAULT" ]]; then
+		log -l 2 'Seconds: %d' "$seconds"
+	fi
+	if [[ "$fail" != "$FAIL_DEFAULT" ]]; then
+		log -l 2 'Stop on failure'
+	fi
+
+	# If the user specified an "until" time, use a lock file to control the
+	# length of operation, and invoke the "at" command to remove the lockfile
+	# at the appropriate time.
+	if [[ "$until" != "$UNTIL_DEFAULT" ]]; then
+		lockfile=/tmp/repeat-$USER-$(date +'%H%M%S%N').lck
+		touch "$lockfile"
+		echo "rm -f '$lockfile'" | at "$until" || exit 1
+	elif [[ $seconds != 0 ]]; then
+		start_time=$(date +'%s')
+	fi
+	# If the user specifies a count, that value is treated as the maximum
+	# number of times to run the command, regardless of whether an "until" or
+	# "seconds" option is specified.
+	for (( i=0; i != count; i++ )); do
+		status=0
+		"$@" || status=$?
+		if "$fail" && (( status != 0 )); then
+			log -l 0 'Command exited with status %d' "$status"
+			log 'Command executed %d times.' $(( i + 1 ))
+			break
+		fi
+		if [[ -n "$lockfile" && ! -f "$lockfile" ]]; then
+			# Terminate the loop if the lockfile disappears
+			break
+		elif [[ -z "$lockfile" && "$seconds" != 0 ]]; then
+			# Terminate the loop if the elapsed time has passed
+			current_time=$(date +'%s')
+			elapsed_time=$((current_time - start_time))
+			if (( elapsed_time >= seconds )); then
+				break
+			fi
+		fi
+	done
+
+	# Clean up the lockfile if it exists and has not been removed already
+	if [[ -n "$lockfile" && -f "$lockfile" ]]; then
+		rm -f "$lockfile"
+	fi
+}
+
+main "$@"

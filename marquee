@@ -1,0 +1,35 @@
+#!/bin/bash
+
+trap ctrl_c SIGINT
+
+function ctrl_c() {
+	tput sgr0
+	clear
+	exit
+}
+
+COLS=`tput cols`
+STRING=`echo $@`
+BEGIN=0
+COUNTER=0
+while [ 1 ]; do
+	STRING_STATE=${STRING:$BEGIN:$COLS}
+	tput setab 8
+	#tput clear
+	tput cup 0 0
+	tput setaf 1
+	tput setab 11
+	tput bold
+	figlet -W -w 1000 -f banner $STRING | sed -e 's/#/##/g' -e 's/ /  /g' -e 'p' | sed -r "s/.{$BEGIN}(.{0,$COLS}).*/\1/"
+	sleep 0.02
+	tput setab 8
+	#tput clear
+	tput cup 0 0
+	tput rmso
+	tput setaf 0
+	tput setab 1
+	figlet -W -w 1000 -f banner $STRING | sed -e 's/#/##/g' -e 's/ /  /g' -e 'p' | sed -r "s/.{$BEGIN}(.{0,$COLS}).*/\1/"
+	sleep 0.02
+	BEGIN=`expr $BEGIN + 3`
+	COUNTER=`expr $COUNTER + 1`
+done

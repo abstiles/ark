@@ -1,0 +1,61 @@
+#!/bin/bash
+
+COLOR_RED=1
+
+headline () {
+	if command -v figlet &> /dev/null; then
+		local text="$*"
+		figlet -w "$(tput cols)" -cf banner3 <<< "${text// /  }"
+	else
+		echo "Requires \"figlet\" to be installed."
+	fi
+}
+
+my_ips() {
+	ifconfig \
+		| sed -n -E 's/.*inet[^0-9]*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+}
+
+print_centering_lines() {
+	local content_line_count
+	local total_lines
+	local leading_lines
+	local newlines
+	content_line_count=$(lines_needed_for_ips "$1")
+	total_lines=$(tput lines)
+	leading_lines=$(( (total_lines - content_line_count) / 2 ))
+	for (( i=0; i < leading_lines; ++i )); do
+		printf '\n'
+	done
+}
+
+lines_needed_for_ips() {
+	local count
+	count="$1"
+	(( count == 0 )) && count=1
+	echo $(( count * 8 - 1 ))
+}
+
+clear
+
+while true; do
+	ip_addrs=( $(my_ips | grep -vE '^(127|192|172)') )
+	valid_ip_count=${#ip_addrs[@]}
+	print_centering_lines "$valid_ip_count"
+	first_ip=1
+	for ip_addr in "${ip_addrs[@]}"; do
+		(( first_ip )) || printf '\n\n'
+		headline "$ip_addr"
+		first_ip=0
+	done
+	if (( valid_ip_count == 0 )); then
+		tput setaf "$COLOR_RED"
+		headline "UNREACHABLE"
+		tput sgr0
+	fi
+	sleep 5
+	clear
+	if (( valid_ip_count > 0 )); then
+		read -sn 1
+	fi
+done

@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# These variables are used by git-sh-setup, but shellcheck reports them unused.
+# shellcheck disable=SC2034
+USAGE="[<remote>]"
+# shellcheck disable=SC2034
+LONG_USAGE="Assists finding old remote branches by showing their age."
+# shellcheck disable=SC2034
+SUBDIRECTORY_OK=1
+
+. "$(git --exec-path)/git-sh-setup"
+
+# Return true if this branch should be ignored in output.
+ignore() {
+	local branch="$1"
+	[[ $branch =~ release/ ]] \
+		|| [[ $branch == develop ]] \
+		|| [[ $branch == master ]]
+}
+
+# Given a commit SHA and branch name, output the branch info.
+show_branch() {
+	local commit="$1"
+	local branch_name="${2:-}"
+
+	local clean_branch=${branch_name//%/%%}
+	git --no-pager show -s \
+		--format="%ci %C(auto)%h %Cblue%<(16,trunc)%an %Creset${clean_branch}" \
+		"$commit"
+}
+
+remote=${1:-origin}
+
+git fetch -p 2>&1 >/dev/null
+git ls-remote --heads "$remote" \
+| while IFS= read -r head; do
+	commit=$(cut -f1 <<<"$head")
+	ref=$(cut -f2 <<<"$head")
+	branch_name=${ref#refs/heads/}
+	if ! ignore "$branch_name"; then
+		# Wrap this in a printf to strip random extra newlines.
+		printf "%s\n" "$(show_branch "$commit" "$branch_name")"
+	fi
+done \
+| sort -ur

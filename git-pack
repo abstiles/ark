@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+USAGE="Usage:
+$0 [options] <filename>
+$0 --help
+
+Packs all modified files into a compressed tarball. By default, operates on the
+last commit. Otherwise, operates on the files determined by the given options.
+
+Options:
+    --staged         Packs all files in staging area.
+    --since <commit> Packs all files modified since the given commit.
+    --help, -h       Prints this usage information and exits.
+"
+
+usage () {
+	printf "%s\n" "$USAGE"
+}
+
+files_changed_since () {
+	commit=HEAD
+	if (( $# )) && [[ $1 != HEAD ]]; then
+		commit=$1..
+	fi
+	git diff-tree --root --no-commit-id --name-only -r "$commit" --
+}
+
+files_staged () {
+	git status -z | xargs -0 printf "%s\n" | grep -v -e '^??' -e '^ ' | cut -c4-
+}
+
+changed_files=()
+target_filename=
+while (( "$#" )); do
+	case $1 in
+		--help|-h)
+			usage
+			exit
+			;;
+		--staged)
+			IFS=$'\n' changed_files=( $(files_staged) )
+			;;
+		--since)
+			shift
+			IFS=$'\n' changed_files=( $(files_changed_since "$1") )
+			;;
+		*)
+			if [[ -z $target_filename ]]; then
+				target_filename=$1
+			else
+				echo "ERROR: only one filename allowed." >&2
+				usage >&2
+				exit 1
+			fi
+			;;
+	esac
+	shift
+done
+
+# If no filename given, make the default filename based on the current branch.
+if [[ -z $target_filename ]]; then
+	target_filename=$(git symbolic-ref --short HEAD).tar.bz2
+fi
+
+# If the user didn't specify the changed files to pack, pick something sensible.
+# Pack the staged files if there are staged modifications, or just get the
+# changes from the latest commit otherwise.
+if [[ -z $changed_files ]]; then
+	echo -n "Files to pack unspecified. "
+	staged_files=$(files_staged)
+	if [[ -n $staged_files ]]; then
+		echo -n "Packing staged files "
+		IFS=$'\n' changed_files=( $staged_files )
+	else
+		echo -n "Packing files changed in last commit "
+		IFS=$'\n' changed_files=( $(files_changed_since) )
+	fi
+else
+	echo "Packing "
+fi
+echo "to $target_filename"
+
+# TODO: location agnostic, wherever run should work
+tar -cvjf "$target_filename" "${changed_files[@]}"

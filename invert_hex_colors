@@ -1,0 +1,322 @@
+#!/usr/bin/env python
+
+import sys
+import re
+
+from colormath.color_conversions import convert_color
+from colormath.color_objects import sRGBColor, LabColor
+from colormath.color_diff import delta_e_cmc
+
+class Color(object):
+    def __init__(self, hex_color, name='Unknown Color', xterm_color=None):
+        if xterm_color is not None and not 0 <= xterm_color <= 256:
+            raise ValueError('xterm_color({}) is not in range [0, 255]'
+                    .format(xterm_color))
+        self.name = name
+        self.xterm_color = xterm_color
+        self.rgb = sRGBColor.new_from_rgb_hex(hex_color)
+        self.lab = convert_color(self.rgb, LabColor)
+
+    @property
+    def inverted(self):
+        inverted_tuple = map(lambda x: 1 - x, self.rgb.get_value_tuple())
+        inverted_rgb_hex = sRGBColor(*inverted_tuple).get_rgb_hex()
+        if self.name.startswith('Inverted '):
+            inverted_name = self.name.partition(' ')[2]
+        else:
+            inverted_name = 'Inverted {.name}'.format(self)
+        return Color(inverted_rgb_hex, inverted_name)
+
+    def difference(self, other):
+        return delta_e_cmc(self.lab, other.lab)
+
+def invert_matched_hex(m):
+    return Color(m.group(1)).inverted.rgb.get_rgb_hex()
+
+def invert_matched_xterm(m):
+    global COLOR_LIST, COLOR_MAP
+    try:
+        color = COLOR_MAP[int(m.group(1))]
+    except KeyError:
+        return m.group(1)
+    if color.xterm_color < 16:
+        inverse = color
+    else:
+        inverse = min(COLOR_LIST, key=lambda x: color.difference(x.inverted))
+    return str(inverse.xterm_color)
+
+def invert_matched_word(m):
+    global COLOR_LIST, COLOR_MAP
+    try:
+        color = COLOR_MAP[m.group(1)]
+    except KeyError:
+        return m.group(1)
+    inverse = min(COLOR_LIST, key=lambda x: color.difference(x.inverted))
+    return str(inverse.name)
+
+COLOR_LIST = (
+    #Color(name='Black', xterm_color=0, hex_color='000000'),
+    #Color(name='Blue', xterm_color=9, hex_color='0000ff'),
+    #Color(name='Green', xterm_color=10, hex_color='00ff00'),
+    #Color(name='Cyan', xterm_color=11, hex_color='00ffff'),
+    #Color(name='Red', xterm_color=12, hex_color='ff0000'),
+    #Color(name='Magenta', xterm_color=13, hex_color='ff00ff'),
+    #Color(name='Yellow', xterm_color=14, hex_color='ffff00'),
+    #Color(name='White', xterm_color=15, hex_color='ffffff'),
+    Color(name='Grey0', xterm_color=16, hex_color='000000'),
+    Color(name='NavyBlue', xterm_color=17, hex_color='00005f'),
+    Color(name='DarkBlue', xterm_color=18, hex_color='000087'),
+    Color(name='Blue3', xterm_color=19, hex_color='0000af'),
+    Color(name='Blue3', xterm_color=20, hex_color='0000d7'),
+    Color(name='Blue1', xterm_color=21, hex_color='0000ff'),
+    Color(name='DarkGreen', xterm_color=22, hex_color='005f00'),
+    Color(name='DeepSkyBlue4-3', xterm_color=23, hex_color='005f5f'),
+    Color(name='DeepSkyBlue4-2', xterm_color=24, hex_color='005f87'),
+    Color(name='DeepSkyBlue4-1', xterm_color=25, hex_color='005faf'),
+    Color(name='DodgerBlue3', xterm_color=26, hex_color='005fd7'),
+    Color(name='DodgerBlue2', xterm_color=27, hex_color='005fff'),
+    Color(name='Green4', xterm_color=28, hex_color='008700'),
+    Color(name='SpringGreen4', xterm_color=29, hex_color='00875f'),
+    Color(name='Turquoise4', xterm_color=30, hex_color='008787'),
+    Color(name='DeepSkyBlue3-2', xterm_color=31, hex_color='0087af'),
+    Color(name='DeepSkyBlue3-1', xterm_color=32, hex_color='0087d7'),
+    Color(name='DodgerBlue1', xterm_color=33, hex_color='0087ff'),
+    Color(name='Green3', xterm_color=34, hex_color='00af00'),
+    Color(name='SpringGreen3', xterm_color=35, hex_color='00af5f'),
+    Color(name='DarkCyan', xterm_color=36, hex_color='00af87'),
+    Color(name='LightSeaGreen', xterm_color=37, hex_color='00afaf'),
+    Color(name='DeepSkyBlue2', xterm_color=38, hex_color='00afd7'),
+    Color(name='DeepSkyBlue1', xterm_color=39, hex_color='00afff'),
+    Color(name='Green3', xterm_color=40, hex_color='00d700'),
+    Color(name='SpringGreen3', xterm_color=41, hex_color='00d75f'),
+    Color(name='SpringGreen2', xterm_color=42, hex_color='00d787'),
+    Color(name='Cyan3', xterm_color=43, hex_color='00d7af'),
+    Color(name='DarkTurquoise', xterm_color=44, hex_color='00d7d7'),
+    Color(name='Turquoise2', xterm_color=45, hex_color='00d7ff'),
+    Color(name='Green1', xterm_color=46, hex_color='00ff00'),
+    Color(name='SpringGreen2', xterm_color=47, hex_color='00ff5f'),
+    Color(name='SpringGreen1', xterm_color=48, hex_color='00ff87'),
+    Color(name='MediumSpringGreen', xterm_color=49, hex_color='00ffaf'),
+    Color(name='Cyan2', xterm_color=50, hex_color='00ffd7'),
+    Color(name='Cyan1', xterm_color=51, hex_color='00ffff'),
+    Color(name='DarkRed', xterm_color=52, hex_color='5f0000'),
+    Color(name='DeepPink4', xterm_color=53, hex_color='5f005f'),
+    Color(name='Purple4-2', xterm_color=54, hex_color='5f0087'),
+    Color(name='Purple4-1', xterm_color=55, hex_color='5f00af'),
+    Color(name='Purple3', xterm_color=56, hex_color='5f00d7'),
+    Color(name='BlueViolet', xterm_color=57, hex_color='5f00ff'),
+    Color(name='Orange4', xterm_color=58, hex_color='5f5f00'),
+    Color(name='Grey37', xterm_color=59, hex_color='5f5f5f'),
+    Color(name='MediumPurple4', xterm_color=60, hex_color='5f5f87'),
+    Color(name='SlateBlue3-2', xterm_color=61, hex_color='5f5faf'),
+    Color(name='SlateBlue3-1', xterm_color=62, hex_color='5f5fd7'),
+    Color(name='RoyalBlue1', xterm_color=63, hex_color='5f5fff'),
+    Color(name='Chartreuse4', xterm_color=64, hex_color='5f8700'),
+    Color(name='DarkSeaGreen4', xterm_color=65, hex_color='5f875f'),
+    Color(name='PaleTurquoise4', xterm_color=66, hex_color='5f8787'),
+    Color(name='SteelBlue', xterm_color=67, hex_color='5f87af'),
+    Color(name='SteelBlue3', xterm_color=68, hex_color='5f87d7'),
+    Color(name='CornflowerBlue', xterm_color=69, hex_color='5f87ff'),
+    Color(name='Chartreuse3', xterm_color=70, hex_color='5faf00'),
+    Color(name='DarkSeaGreen4', xterm_color=71, hex_color='5faf5f'),
+    Color(name='CadetBlue-2', xterm_color=72, hex_color='5faf87'),
+    Color(name='CadetBlue-1', xterm_color=73, hex_color='5fafaf'),
+    Color(name='SkyBlue3', xterm_color=74, hex_color='5fafd7'),
+    Color(name='SteelBlue1', xterm_color=75, hex_color='5fafff'),
+    Color(name='Chartreuse3', xterm_color=76, hex_color='5fd700'),
+    Color(name='PaleGreen3', xterm_color=77, hex_color='5fd75f'),
+    Color(name='SeaGreen3', xterm_color=78, hex_color='5fd787'),
+    Color(name='Aquamarine3', xterm_color=79, hex_color='5fd7af'),
+    Color(name='MediumTurquoise', xterm_color=80, hex_color='5fd7d7'),
+    Color(name='SteelBlue1', xterm_color=81, hex_color='5fd7ff'),
+    Color(name='Chartreuse2', xterm_color=82, hex_color='5fff00'),
+    Color(name='SeaGreen2', xterm_color=83, hex_color='5fff5f'),
+    Color(name='SeaGreen1-2', xterm_color=84, hex_color='5fff87'),
+    Color(name='SeaGreen1-1', xterm_color=85, hex_color='5fffaf'),
+    Color(name='Aquamarine1', xterm_color=86, hex_color='5fffd7'),
+    Color(name='DarkSlateGray2', xterm_color=87, hex_color='5fffff'),
+    Color(name='DarkRed', xterm_color=88, hex_color='870000'),
+    Color(name='DeepPink4', xterm_color=89, hex_color='87005f'),
+    Color(name='DarkMagenta-2', xterm_color=90, hex_color='870087'),
+    Color(name='DarkMagenta-1', xterm_color=91, hex_color='8700af'),
+    Color(name='DarkViolet', xterm_color=92, hex_color='8700d7'),
+    Color(name='Purple', xterm_color=93, hex_color='8700ff'),
+    Color(name='Orange4', xterm_color=94, hex_color='875f00'),
+    Color(name='LightPink4', xterm_color=95, hex_color='875f5f'),
+    Color(name='Plum4', xterm_color=96, hex_color='875f87'),
+    Color(name='MediumPurple3-2', xterm_color=97, hex_color='875faf'),
+    Color(name='MediumPurple3-1', xterm_color=98, hex_color='875fd7'),
+    Color(name='SlateBlue1', xterm_color=99, hex_color='875fff'),
+    Color(name='Yellow4', xterm_color=100, hex_color='878700'),
+    Color(name='Wheat4', xterm_color=101, hex_color='87875f'),
+    Color(name='Grey53', xterm_color=102, hex_color='878787'),
+    Color(name='LightSlateGrey', xterm_color=103, hex_color='8787af'),
+    Color(name='MediumPurple', xterm_color=104, hex_color='8787d7'),
+    Color(name='LightSlateBlue', xterm_color=105, hex_color='8787ff'),
+    Color(name='Yellow4', xterm_color=106, hex_color='87af00'),
+    Color(name='DarkOliveGreen3', xterm_color=107, hex_color='87af5f'),
+    Color(name='DarkSeaGreen', xterm_color=108, hex_color='87af87'),
+    Color(name='LightSkyBlue3-2', xterm_color=109, hex_color='87afaf'),
+    Color(name='LightSkyBlue3-1', xterm_color=110, hex_color='87afd7'),
+    Color(name='SkyBlue2', xterm_color=111, hex_color='87afff'),
+    Color(name='Chartreuse2', xterm_color=112, hex_color='87d700'),
+    Color(name='DarkOliveGreen3', xterm_color=113, hex_color='87d75f'),
+    Color(name='PaleGreen3', xterm_color=114, hex_color='87d787'),
+    Color(name='DarkSeaGreen3', xterm_color=115, hex_color='87d7af'),
+    Color(name='DarkSlateGray3', xterm_color=116, hex_color='87d7d7'),
+    Color(name='SkyBlue1', xterm_color=117, hex_color='87d7ff'),
+    Color(name='Chartreuse1', xterm_color=118, hex_color='87ff00'),
+    Color(name='LightGreen-2', xterm_color=119, hex_color='87ff5f'),
+    Color(name='LightGreen-1', xterm_color=120, hex_color='87ff87'),
+    Color(name='PaleGreen1', xterm_color=121, hex_color='87ffaf'),
+    Color(name='Aquamarine1', xterm_color=122, hex_color='87ffd7'),
+    Color(name='DarkSlateGray1', xterm_color=123, hex_color='87ffff'),
+    Color(name='Red3', xterm_color=124, hex_color='af0000'),
+    Color(name='DeepPink4', xterm_color=125, hex_color='af005f'),
+    Color(name='MediumVioletRed', xterm_color=126, hex_color='af0087'),
+    Color(name='Magenta3', xterm_color=127, hex_color='af00af'),
+    Color(name='DarkViolet', xterm_color=128, hex_color='af00d7'),
+    Color(name='Purple', xterm_color=129, hex_color='af00ff'),
+    Color(name='DarkOrange3', xterm_color=130, hex_color='af5f00'),
+    Color(name='IndianRed', xterm_color=131, hex_color='af5f5f'),
+    Color(name='HotPink3', xterm_color=132, hex_color='af5f87'),
+    Color(name='MediumOrchid3', xterm_color=133, hex_color='af5faf'),
+    Color(name='MediumOrchid', xterm_color=134, hex_color='af5fd7'),
+    Color(name='MediumPurple2', xterm_color=135, hex_color='af5fff'),
+    Color(name='DarkGoldenrod', xterm_color=136, hex_color='af8700'),
+    Color(name='LightSalmon3', xterm_color=137, hex_color='af875f'),
+    Color(name='RosyBrown', xterm_color=138, hex_color='af8787'),
+    Color(name='Grey63', xterm_color=139, hex_color='af87af'),
+    Color(name='MediumPurple2', xterm_color=140, hex_color='af87d7'),
+    Color(name='MediumPurple1', xterm_color=141, hex_color='af87ff'),
+    Color(name='Gold3', xterm_color=142, hex_color='afaf00'),
+    Color(name='DarkKhaki', xterm_color=143, hex_color='afaf5f'),
+    Color(name='NavajoWhite3', xterm_color=144, hex_color='afaf87'),
+    Color(name='Grey69', xterm_color=145, hex_color='afafaf'),
+    Color(name='LightSteelBlue3', xterm_color=146, hex_color='afafd7'),
+    Color(name='LightSteelBlue', xterm_color=147, hex_color='afafff'),
+    Color(name='Yellow3', xterm_color=148, hex_color='afd700'),
+    Color(name='DarkOliveGreen3', xterm_color=149, hex_color='afd75f'),
+    Color(name='DarkSeaGreen3', xterm_color=150, hex_color='afd787'),
+    Color(name='DarkSeaGreen2-2', xterm_color=151, hex_color='afd7af'),
+    Color(name='LightCyan3', xterm_color=152, hex_color='afd7d7'),
+    Color(name='LightSkyBlue1', xterm_color=153, hex_color='afd7ff'),
+    Color(name='GreenYellow', xterm_color=154, hex_color='afff00'),
+    Color(name='DarkOliveGreen2', xterm_color=155, hex_color='afff5f'),
+    Color(name='PaleGreen1', xterm_color=156, hex_color='afff87'),
+    Color(name='DarkSeaGreen2-1', xterm_color=157, hex_color='afffaf'),
+    Color(name='DarkSeaGreen1', xterm_color=158, hex_color='afffd7'),
+    Color(name='PaleTurquoise1', xterm_color=159, hex_color='afffff'),
+    Color(name='Red3', xterm_color=160, hex_color='d70000'),
+    Color(name='DeepPink3-2', xterm_color=161, hex_color='d7005f'),
+    Color(name='DeepPink3-1', xterm_color=162, hex_color='d70087'),
+    Color(name='Magenta3-2', xterm_color=163, hex_color='d700af'),
+    Color(name='Magenta3-1', xterm_color=164, hex_color='d700d7'),
+    Color(name='Magenta2', xterm_color=165, hex_color='d700ff'),
+    Color(name='DarkOrange3', xterm_color=166, hex_color='d75f00'),
+    Color(name='IndianRed', xterm_color=167, hex_color='d75f5f'),
+    Color(name='HotPink3', xterm_color=168, hex_color='d75f87'),
+    Color(name='HotPink2', xterm_color=169, hex_color='d75faf'),
+    Color(name='Orchid', xterm_color=170, hex_color='d75fd7'),
+    Color(name='MediumOrchid1', xterm_color=171, hex_color='d75fff'),
+    Color(name='Orange3', xterm_color=172, hex_color='d78700'),
+    Color(name='LightSalmon3', xterm_color=173, hex_color='d7875f'),
+    Color(name='LightPink3', xterm_color=174, hex_color='d78787'),
+    Color(name='Pink3', xterm_color=175, hex_color='d787af'),
+    Color(name='Plum3', xterm_color=176, hex_color='d787d7'),
+    Color(name='Violet', xterm_color=177, hex_color='d787ff'),
+    Color(name='Gold3', xterm_color=178, hex_color='d7af00'),
+    Color(name='LightGoldenrod3', xterm_color=179, hex_color='d7af5f'),
+    Color(name='Tan', xterm_color=180, hex_color='d7af87'),
+    Color(name='MistyRose3', xterm_color=181, hex_color='d7afaf'),
+    Color(name='Thistle3', xterm_color=182, hex_color='d7afd7'),
+    Color(name='Plum2', xterm_color=183, hex_color='d7afff'),
+    Color(name='Yellow3', xterm_color=184, hex_color='d7d700'),
+    Color(name='Khaki3', xterm_color=185, hex_color='d7d75f'),
+    Color(name='LightGoldenrod2', xterm_color=186, hex_color='d7d787'),
+    Color(name='LightYellow3', xterm_color=187, hex_color='d7d7af'),
+    Color(name='Grey84', xterm_color=188, hex_color='d7d7d7'),
+    Color(name='LightSteelBlue1', xterm_color=189, hex_color='d7d7ff'),
+    Color(name='Yellow2', xterm_color=190, hex_color='d7ff00'),
+    Color(name='DarkOliveGreen1-2', xterm_color=191, hex_color='d7ff5f'),
+    Color(name='DarkOliveGreen1-1', xterm_color=192, hex_color='d7ff87'),
+    Color(name='DarkSeaGreen1', xterm_color=193, hex_color='d7ffaf'),
+    Color(name='Honeydew2', xterm_color=194, hex_color='d7ffd7'),
+    Color(name='LightCyan1', xterm_color=195, hex_color='d7ffff'),
+    Color(name='Red1', xterm_color=196, hex_color='ff0000'),
+    Color(name='DeepPink2', xterm_color=197, hex_color='ff005f'),
+    Color(name='DeepPink1-2', xterm_color=198, hex_color='ff0087'),
+    Color(name='DeepPink1-1', xterm_color=199, hex_color='ff00af'),
+    Color(name='Magenta2', xterm_color=200, hex_color='ff00d7'),
+    Color(name='Magenta1', xterm_color=201, hex_color='ff00ff'),
+    Color(name='OrangeRed1', xterm_color=202, hex_color='ff5f00'),
+    Color(name='IndianRed1-2', xterm_color=203, hex_color='ff5f5f'),
+    Color(name='IndianRed1-1', xterm_color=204, hex_color='ff5f87'),
+    Color(name='HotPink-2', xterm_color=205, hex_color='ff5faf'),
+    Color(name='HotPink-1', xterm_color=206, hex_color='ff5fd7'),
+    Color(name='MediumOrchid1', xterm_color=207, hex_color='ff5fff'),
+    Color(name='DarkOrange', xterm_color=208, hex_color='ff8700'),
+    Color(name='Salmon1', xterm_color=209, hex_color='ff875f'),
+    Color(name='LightCoral', xterm_color=210, hex_color='ff8787'),
+    Color(name='PaleVioletRed1', xterm_color=211, hex_color='ff87af'),
+    Color(name='Orchid2', xterm_color=212, hex_color='ff87d7'),
+    Color(name='Orchid1-2', xterm_color=213, hex_color='ff87ff'),
+    Color(name='Orange1-1', xterm_color=214, hex_color='ffaf00'),
+    Color(name='SandyBrown', xterm_color=215, hex_color='ffaf5f'),
+    Color(name='LightSalmon1', xterm_color=216, hex_color='ffaf87'),
+    Color(name='LightPink1', xterm_color=217, hex_color='ffafaf'),
+    Color(name='Pink1', xterm_color=218, hex_color='ffafd7'),
+    Color(name='Plum1', xterm_color=219, hex_color='ffafff'),
+    Color(name='Gold1', xterm_color=220, hex_color='ffd700'),
+    Color(name='LightGoldenrod2-2', xterm_color=221, hex_color='ffd75f'),
+    Color(name='LightGoldenrod2-1', xterm_color=222, hex_color='ffd787'),
+    Color(name='NavajoWhite1', xterm_color=223, hex_color='ffd7af'),
+    Color(name='MistyRose1', xterm_color=224, hex_color='ffd7d7'),
+    Color(name='Thistle1', xterm_color=225, hex_color='ffd7ff'),
+    Color(name='Yellow1', xterm_color=226, hex_color='ffff00'),
+    Color(name='LightGoldenrod1', xterm_color=227, hex_color='ffff5f'),
+    Color(name='Khaki1', xterm_color=228, hex_color='ffff87'),
+    Color(name='Wheat1', xterm_color=229, hex_color='ffffaf'),
+    Color(name='Cornsilk1', xterm_color=230, hex_color='ffffd7'),
+    Color(name='Grey100', xterm_color=231, hex_color='ffffff'),
+    Color(name='Grey3', xterm_color=232, hex_color='080808'),
+    Color(name='Grey7', xterm_color=233, hex_color='121212'),
+    Color(name='Grey11', xterm_color=234, hex_color='1c1c1c'),
+    Color(name='Grey15', xterm_color=235, hex_color='262626'),
+    Color(name='Grey19', xterm_color=236, hex_color='303030'),
+    Color(name='Grey23', xterm_color=237, hex_color='3a3a3a'),
+    Color(name='Grey27', xterm_color=238, hex_color='444444'),
+    Color(name='Grey30', xterm_color=239, hex_color='4e4e4e'),
+    Color(name='Grey35', xterm_color=240, hex_color='585858'),
+    Color(name='Grey39', xterm_color=241, hex_color='626262'),
+    Color(name='Grey42', xterm_color=242, hex_color='6c6c6c'),
+    Color(name='Grey46', xterm_color=243, hex_color='767676'),
+    Color(name='Grey50', xterm_color=244, hex_color='808080'),
+    Color(name='Grey54', xterm_color=245, hex_color='8a8a8a'),
+    Color(name='Grey58', xterm_color=246, hex_color='949494'),
+    Color(name='Grey62', xterm_color=247, hex_color='9e9e9e'),
+    Color(name='Grey66', xterm_color=248, hex_color='a8a8a8'),
+    Color(name='Grey70', xterm_color=249, hex_color='b2b2b2'),
+    Color(name='Grey74', xterm_color=250, hex_color='bcbcbc'),
+    Color(name='Grey78', xterm_color=251, hex_color='c6c6c6'),
+    Color(name='Grey82', xterm_color=252, hex_color='d0d0d0'),
+    Color(name='Grey85', xterm_color=253, hex_color='dadada'),
+    Color(name='Grey89', xterm_color=254, hex_color='e4e4e4'),
+    Color(name='Grey93', xterm_color=255, hex_color='eeeeee')
+    )
+COLOR_MAP = dict([(color.name, color) for color in COLOR_LIST] +
+                 [(color.xterm_color, color) for color in COLOR_LIST])
+
+hex_color_regex = re.compile(r'#([0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?)\b')
+xterm_color_regex = re.compile(r'(?<=cterm[fb]g=)([1-2]?[0-9]{2})\b')
+tmux_color_regex = re.compile(r'(?<=colour)([1-2]?[0-9]{2})')
+dircolor_regex = re.compile(r'(?<=[34]8;5;)([0-9]+)')
+word_color_regex = re.compile(r'(?<=(?:[fb]g|sp)=)([a-zA-Z]\w+)\b')
+
+for line in sys.stdin:
+    line = hex_color_regex.sub(invert_matched_hex, line)
+    line = xterm_color_regex.sub(invert_matched_xterm, line)
+    line = tmux_color_regex.sub(invert_matched_xterm, line)
+    line = dircolor_regex.sub(invert_matched_xterm, line)
+    line = word_color_regex.sub(invert_matched_word, line)
+    print line,

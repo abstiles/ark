@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [[ ! -f "$1" || ! -f "$2" ]]; then
+	echo "Usage:"
+	echo "    vimdiffpatch file patch"
+	exit 1
+fi
+
+vim $1 +"vert diffpa $2" +'colorscheme peaksea'

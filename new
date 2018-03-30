@@ -1,0 +1,3 @@
+#!/bin/bash
+
+template -o "$1" && chmod +x "$1" && "${EDITOR:-vim}" "$1"

@@ -1,0 +1,86 @@
+#!/usr/bin/env python
+
+from __future__ import division
+
+import sys
+import os
+import math
+
+
+# Whitelist dictionary of math-relevant builtin commands
+_safe_globals = dict((x, getattr(__builtins__, x)) for x in dir(__builtins__)
+                     if x in ['abs', 'all', 'bin', 'chr', 'complex', 'divmod',
+                              'float', 'hex', 'int', 'len', 'long', 'map',
+                              'max', 'min', 'oct', 'ord', 'pow', 'range',
+                              'reduce', 'slice', 'str', 'sum', 'zip']
+                    )
+# Remove other builtins to prevent unexpected behavior
+_safe_globals['__builtins__'] = None
+# Add the math module to the whitelist
+_safe_globals.update(dict((x, getattr(math, x)) for x in dir(math)
+                    if not x.startswith('_')))
+
+
+def _main(*args):
+    global _safe_globals
+    env_vars = _process_var_dict(os.environ)
+    # Process each argument as a distinct group (as though grouped by
+    # parentheses), giving these groups (for all practical purposes) a higher
+    # precedence than parentheses.
+    item_list = []
+    for arg in args:
+        try:
+            item_list.append(str(eval(arg, _safe_globals, env_vars)))
+        except SyntaxError:
+            # If it doesn't make sense on its own, put it back to see if it
+            # makes sense when joined with the rest of the arguments
+            item_list.append(arg)
+    #print repr(eval(' '.join(item_list), _safe_globals, env_vars))
+    precision = 10
+    print '{value:0.{precision}g}'.format(
+        precision=precision,
+        value=round(eval(' '.join(item_list), _safe_globals, env_vars),
+                    precision))
+
+
+def process_string_num(s):
+    """Return the number represented by a given string (if applicable)."""
+    # Skip anything that isn't a string
+    if not isinstance(s, basestring):
+        return s
+    base = 10
+    # Interpret base-specific prefixes
+    if s.startswith(('0x', '-0x')):
+        base = 16
+    elif s.startswith(('0o', '-0o')):
+        base = 8
+    elif s.startswith(('0b', '-0b')):
+        base = 2
+    # First, try to interpret the var's value as an int
+    try:
+        return int(s, base)
+    except ValueError:
+        pass
+    # Next, try to interpret the var's value as a float
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    # Last, try to interpret the var's value as complex
+    try:
+        return complex(s)
+    except ValueError:
+        pass
+    # If all else fails, leave it as-is
+    return s
+
+def _process_var_dict(var_dict):
+    """Convert all recognized strings to numbers in the values of the dict."""
+    new_vars = {}
+    for var, val in var_dict.items():
+        new_vars[var] = process_string_num(val)
+    return new_vars
+
+
+if __name__ == '__main__':
+    _main(*sys.argv[1:])

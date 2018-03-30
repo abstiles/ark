@@ -1,0 +1,3 @@
+#!/bin/bash
+
+rs -e -w$(tput cols)
